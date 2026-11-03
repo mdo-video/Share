@@ -1,0 +1,53 @@
+name: Build MDO Share
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: 8.7 }
+      - run: unzip -q MDOShare.zip && gradle -p MDOShare/android assembleRelease --no-daemon
+        env:
+          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+      - run: cp MDOShare/android/app/build/outputs/apk/release/app-release.apk MDOShare.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: apk, path: MDOShare.apk }
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install customtkinter requests pyinstaller
+      - run: unzip -q MDOShare.zip
+        shell: bash
+      - name: Versione
+        shell: bash
+        run: printf 'VERSION = "1.0.%s"\nREPO = "%s"\nTOKEN = "%s"\n' "$GITHUB_RUN_NUMBER" "$GITHUB_REPOSITORY" "$UPDATE_TOKEN" > MDOShare/windows/_version.py
+        env:
+          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+      - run: pyinstaller --onefile --noconsole --name MDOShare --collect-all customtkinter mdo_share.py
+        working-directory: MDOShare/windows
+      - uses: actions/upload-artifact@v4
+        with: { name: exe, path: MDOShare/windows/dist/MDOShare.exe }
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: MDO Share 1.0.${{ github.run_number }}
+          files: |
+            out/MDOShare.apk
+            out/MDOShare.exe
